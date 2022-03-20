@@ -9,8 +9,19 @@ from collections import defaultdict
 from skimage.measure import label, regionprops
 
 
-def bbox_center(bbox):
-    """Центр bbox"""
+def bbox_center(bbox) -> tuple:
+    """Центр bbox
+
+    Параметры
+    ---------
+    bbox : list
+        Bounding box
+
+    Возвращаемое значение
+    ---------------------
+    tuple
+        Центр x и y
+    """
     return (bbox[0] + (bbox[2] - bbox[0]) / 2, bbox[1] + (bbox[3] - bbox[1]) / 2)
 
 
@@ -18,9 +29,6 @@ class ImageToText:
     def __init__(self, image: np.ndarray = None) -> None:
         if not image is None:
             self.__image: np.ndarray = self.set_image(image)
-            self.__labeled_image: np.ndarray = label(self.__image.copy())
-            self.__regions_image: list = regionprops(self.__labeled_image)
-
         else:
             self.__image: np.ndarray = None
 
@@ -40,7 +48,7 @@ class ImageToText:
         list
             Список особенных признаков у буквы
         """
-        features = []
+        features: list = []
 
         # [Next, Previous, First_child, Parent]
         _, hierachy = cv2.findContours(
@@ -55,14 +63,14 @@ class ImageToText:
                 int_cnt += 1
 
         features.extend([ext_cnt, int_cnt])
-        labeled = label(image)
+        labeled: np.ndarray = label(image)
 
         region = regionprops(labeled)[0]
         filling_factor = region.area / region.bbox_area
 
         features.append(filling_factor)
 
-        centroid = np.array(region.local_centroid) / \
+        centroid: np.ndarray = np.array(region.local_centroid) / \
             np.array(region.image.shape)
         features.extend(centroid)
         features.append(region.eccentricity)
@@ -70,21 +78,27 @@ class ImageToText:
 
         return features
 
-    def __label_english_letters(self) -> list:
-        """Макрировка английских букв"""
+    def __label_english_letters(self) -> np.ndarray:
+        """Макрировка английских букв
 
-        image_copy = self.__image.copy()
-        labeled = label(image_copy)
-        regions = regionprops(labeled)
+        Возвращаемое значение
+        ---------------------
+        np.ndarray
+            Маркированное изображение
+        """
+
+        image_copy: np.ndarray = self.__image.copy()
+        labeled: np.ndarray = label(image_copy)
+        regions: list = regionprops(labeled)
 
         for region1 in regions:
 
-            bbox_region_1 = region1.bbox  # y1, x1, y2, x2
-            bbox_center1 = bbox_center(bbox_region_1)
+            bbox_region_1: tuple = region1.bbox  # y1, x1, y2, x2
+            bbox_center1: tuple = bbox_center(bbox_region_1)
             for region2 in regions:
 
-                bbox_region_2 = region2.bbox
-                bbox_center_2 = bbox_center(bbox_region_2)
+                bbox_region_2: tuple = region2.bbox
+                bbox_center_2: tuple = bbox_center(bbox_region_2)
 
                 if bbox_region_1[0] > bbox_region_2[2] and abs(bbox_center1[1] - bbox_center_2[1]) < 10 and bbox_center1[0] > bbox_center_2[0]:
                     for y in range(labeled.shape[0]):
@@ -96,26 +110,55 @@ class ImageToText:
 
         return labeled
 
-    def __sort_letters(self, labeled: np.ndarray) -> list:
+    def __sort_letters(self, image: np.ndarray) -> list:
         """Сортировка букв по порядку, как на картинке
 
         Параметры
         ---------
-        labeled : np.ndarray
-            Отмаркированная картинка
+        image : np.ndarray
+            Бинарная картинка
 
         Возвращаемое значение
         ---------------------
         list
             Отсортированный bounding box
         """
-        bboxs = [region.bbox for region in regionprops(labeled)]
+        bboxs: list = [region.bbox for region in regionprops(image)]
 
         return sorted(
-            bboxs, key=lambda bbox: labeled.shape[1] - bbox[3], reverse=True)
+            bboxs, key=lambda bbox: image.shape[1] - bbox[3], reverse=True)
 
-    def __search_spaces(self):
-        pass
+    def __search_spaces(self, bboxs: list) -> list:
+        """Поиск на картинке пробелы
+
+        Параметры
+        ---------
+        bboxs : list
+            Bounding boxs букв
+
+        Возвращаемое значение
+        ---------------------
+        list
+            Двухмерный список слов
+        """
+
+        distances: list = [bboxs[i + 1][1] - bboxs[i][3]
+                           for i in range(0, len(bboxs) - 1, 1)]
+        threshold: float = np.std(distances) * 0.5 + np.mean(distances)
+
+        words: list = []
+        current_word: list = [bboxs[0]]
+
+        for i in range(len(distances)):
+            if distances[i] > threshold:
+                words.append(current_word)
+                current_word = []
+
+            current_word.append(bboxs[i + 1])
+
+        words.append(current_word)
+
+        return words
 
     def __image_processing(self, img_path: str) -> np.ndarray:
         """Обработка картинки к нужному формату
@@ -147,10 +190,10 @@ class ImageToText:
         ---------------------
         None
         """
-        train_dir = Path(train_dir_path)
-        train_data = defaultdict(list)
-        features_array = []
-        responses = []
+        train_dir: Path = Path(train_dir_path)
+        train_data: list = defaultdict(list)
+        features_array: list = []
+        responses: list = []
 
         # Сопоставление название папки с картинками
         for path in sorted(train_dir.glob("*")):
@@ -167,8 +210,8 @@ class ImageToText:
                 features_array.append(features)
                 responses.append(ord(symbol))
 
-        features_array = np.array(features_array, dtype="f4")
-        responses = np.array(responses)
+        features_array: np.ndarray = np.array(features_array, dtype="f4")
+        responses: np.ndarray = np.array(responses)
 
         # Метод k-ближайших соседей
         self.__knn = cv2.ml.KNearest_create()
@@ -189,6 +232,13 @@ class ImageToText:
         self.__image = self.__image_processing(img_path)
 
     def get_image(self) -> np.ndarray:
+        """Текущая картинку
+
+        Возвращаемое значение
+        ---------------------
+        np.ndarray
+            Картинка
+        """
         return self.__image
 
     def image_to_text(self):
@@ -200,27 +250,23 @@ class ImageToText:
             Разпознанное изображение в текстовом формате
         """
 
-        labeled = self.__label_english_letters()
+        labeled: np.ndarray = self.__label_english_letters()
 
-        # plt.imshow(labeled)
-        # plt.show()
+        test2: list = self.__sort_letters(labeled)
+        words: list = self.__search_spaces(test2)
 
-        regions = regionprops(labeled)
-        test2 = self.__sort_letters(labeled)
-        test = labeled
-
-        plt.imshow(test)
+        plt.imshow(labeled)
         plt.show()
 
         fig = plt.figure()
 
         x_plt, y_plt = math.ceil(
-            len(regions) / 2), math.floor(len(regions) / 2)
+            len(test2) / 2), math.floor(len(test2) / 2)
 
         for i, bbox in enumerate(test2):
             plt.subplot(x_plt, y_plt, i+1)
             top_left_y1, top_left_x1, bottom_right_y1, bottom_right_x1 = bbox
-            plt.imshow(test[top_left_y1:bottom_right_y1,
+            plt.imshow(labeled[top_left_y1:bottom_right_y1,
                        top_left_x1:bottom_right_x1])
 
         plt.show()
