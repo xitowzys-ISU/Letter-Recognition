@@ -1,7 +1,5 @@
 import cv2
-import math
 import numpy as np
-import matplotlib.pyplot as plt
 
 from typing import Any
 from pathlib import Path
@@ -241,7 +239,7 @@ class ImageToText:
         """
         return self.__image
 
-    def image_to_text(self):
+    def image_to_text(self) -> str:
         """Перевести картинку к текстовый формат
 
         Возвращаемое значение
@@ -255,48 +253,17 @@ class ImageToText:
         test2: list = self.__sort_letters(labeled)
         words: list = self.__search_spaces(test2)
 
-        plt.imshow(labeled)
-        plt.show()
+        result: list = []
 
-        fig = plt.figure()
+        for word in words:
+            for w in word:
+                top_left_y1, top_left_x1, bottom_right_y1, bottom_right_x1 = w
+                test_symbol = self.__extract_features(np.array(labeled[top_left_y1:bottom_right_y1,
+                                                                       top_left_x1:bottom_right_x1], dtype="uint8"))
+                test_symbol = np.array(test_symbol, dtype="f4").reshape(1, 7)
+                ret, _, _, _ = self.__knn.findNearest(test_symbol, 3)
+                result.append(chr(int(ret)))
 
-        x_plt, y_plt = math.ceil(
-            len(test2) / 2), math.floor(len(test2) / 2)
+            result.append(' ')
 
-        for i, bbox in enumerate(test2):
-            plt.subplot(x_plt, y_plt, i+1)
-            top_left_y1, top_left_x1, bottom_right_y1, bottom_right_x1 = bbox
-            plt.imshow(labeled[top_left_y1:bottom_right_y1,
-                       top_left_x1:bottom_right_x1])
-
-        plt.show()
-
-        return labeled
-
-
-if __name__ == "__main__":
-    image_to_text = ImageToText()
-    image_to_text.setup_knn("./data/out/train/")
-
-    # Тестовые данные
-    test_dir = Path("./data/out/")
-    test_data = defaultdict(list)
-
-    # for img_path in sorted(test_dir.glob("*.png")):
-    #     print(img_path)
-    # symbol = img_path.name[0]
-    # print(symbol)
-    # gray = cv2.imread(str(img_path), 0)
-    # binary = gray.copy()
-    # binary[binary > 0] = 1
-    # test_data[symbol].append(binary)
-
-    image_to_text.set_image("data/out/5.png")
-
-    # image = test_data["4"][0]
-
-    image_to_text.image_to_text()
-    # plt.imshow(image_to_text.image_to_text())
-    # plt.show()
-
-    pass
+        return "".join(result).lower()
